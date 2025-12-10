@@ -1,17 +1,26 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="UTF-8">
-  <title>跳转到验证码工具</title>
-  <script>
-    // 提取路径中的密钥并传递给index.html
-    const path = window.location.pathname;
-    const secret = path.slice(1); // 去掉开头的"/"
-    // 重定向并携带密钥参数
-    window.location.replace(`/?secret=${encodeURIComponent(secret)}`);
-  </script>
+    <meta charset="UTF-8">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <title>跳转到验证码工具</title>
+    <script>
+        // 提取路径中的密钥（兼容子路径部署）
+        const path = window.location.pathname;
+        let secret = path.slice(1); // 去掉开头的"/"
+        
+        // 移除可能的仓库路径前缀（如/2FA/）
+        secret = secret.replace(/^2FA\//i, '');
+        
+        // 重定向并携带密钥参数（禁用缓存）
+        if (secret) {
+            window.location.replace(`/?secret=${encodeURIComponent(secret)}&nocache`);
+        } else {
+            window.location.replace('/?nocache');
+        }
+    </script>
 </head>
 <body>
-  <p>正在跳转到验证码工具...</p >
+    <p>正在跳转到验证码工具...</p >
 </body>
 </html>
