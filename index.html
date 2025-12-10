@@ -113,15 +113,13 @@
         let currentSecret = DEFAULT_SECRET;
         const INTERVAL = 30;
 
-        // 强制禁用缓存，确保加载最新代码
-        if (window.location.search !== '?nocache') {
-            window.location.replace(window.location.href + '?nocache');
-        }
+        // 修复：移除强制加nocache参数的跳转逻辑，避免参数冲突
+        // 原强制跳转代码已删除，防止破坏404页面的参数传递
 
-        // 读取URL查询参数中的secret（兼容404重定向）
+        // 修复：读取URL查询参数中的secret（兼容404重定向，修正判断逻辑）
         const urlParams = new URLSearchParams(window.location.search);
         const secretFromUrl = urlParams.get('secret');
-        if (secretFromUrl && secretFromUrl !== 'nocache') {
+        if (secretFromUrl && secretFromUrl.trim() !== '') {
             currentSecret = decodeURIComponent(secretFromUrl);
             document.getElementById('secretInput').value = currentSecret;
             // 自动生成验证码
