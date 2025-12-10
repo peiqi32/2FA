@@ -4,8 +4,25 @@
     <meta charset="UTF-8">
     <title>淘宝：【midjourney杂货铺】专用验证码生成器</title>
     <style>
-        body { font-family: Arial, sans-serif; max-width: 800px; margin: 50px auto; text-align: center; padding: 0 20px; }
-        h1 { color: #333; margin-bottom: 50px; font-size: 2.5em; }
+        body { 
+            font-family: Arial, sans-serif; 
+            margin: 0; 
+            padding: 0; 
+            text-align: center; 
+        }
+        /* 外层容器实现整体缩放80% */
+        .container {
+            transform: scale(0.8);
+            transform-origin: top center; /* 缩放原点设为顶部居中，避免偏移 */
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px 0;
+        }
+        h1 { 
+            color: #333; 
+            margin-bottom: 50px; 
+            font-size: 2.5em; 
+        }
         .input-group { margin: 50px 0; }
         textarea { 
             padding: 50px 30px; 
@@ -75,17 +92,21 @@
     </style>
 </head>
 <body>
-    <h1>淘宝：【midjourney杂货铺】专用验证码生成器</h1>
-    <div class="input-group">
-        <textarea id="secretInput" placeholder="粘贴2FA Secret密钥（支持任意TOTP平台）" autocomplete="off" rows="6"></textarea>
-        <br>
-        <button onclick="useCustomSecret()">生成验证码</button>
-        <button onclick="resetToDefault()">恢复默认密钥</button>
+    <!-- 外层容器包裹所有内容，实现整体缩放 -->
+    <div class="container">
+        <h1>淘宝：【midjourney杂货铺】专用验证码生成器</h1>
+        <div class="input-group">
+            <!-- 修改placeholder为指定文字 -->
+            <textarea id="secretInput" placeholder="请在此处粘贴密钥（淘宝：midjourney杂货铺）" autocomplete="off" rows="6"></textarea>
+            <br>
+            <button onclick="useCustomSecret()">生成验证码</button>
+            <button onclick="resetToDefault()">恢复默认密钥</button>
+        </div>
+        <div class="code" id="totpCode" onclick="copyToClipboard()">未输入密钥</div>
+        <div class="copy-tip" id="copyTip">✅ 验证码已复制到剪贴板！</div>
+        <div class="countdown" id="countdown">剩余时间：--秒</div>
+        <button onclick="refreshCode()">手动刷新</button>
     </div>
-    <div class="code" id="totpCode" onclick="copyToClipboard()">未输入密钥</div>
-    <div class="copy-tip" id="copyTip">✅ 验证码已复制到剪贴板！</div>
-    <div class="countdown" id="countdown">剩余时间：--秒</div>
-    <button onclick="refreshCode()">手动刷新</button>
 
     <script>
         const DEFAULT_SECRET = "Y3MPIW4CAGCHEIRAZYLDE4ATT3AIF4RN";
