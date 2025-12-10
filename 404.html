@@ -2,12 +2,12 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>重定向到验证码工具</title>
+  <title>跳转到验证码工具</title>
   <script>
-    // 将路径参数转换为查询参数，传递给index.html
+    // 提取路径中的密钥并传递给index.html
     const path = window.location.pathname;
-    const secret = path.slice(1); // 提取路径中的密钥（去掉开头的"/"）
-    // 重定向到index.html并携带密钥参数
+    const secret = path.slice(1); // 去掉开头的"/"
+    // 重定向并携带密钥参数
     window.location.replace(`/?secret=${encodeURIComponent(secret)}`);
   </script>
 </head>
