@@ -3,24 +3,39 @@
 <head>
     <meta charset="UTF-8">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>跳转到验证码工具</title>
     <script>
-        // 提取路径中的密钥（兼容子路径部署）
-        const path = window.location.pathname;
-        let secret = path.slice(1); // 去掉开头的"/"
-        
-        // 移除可能的仓库路径前缀（如/2FA/）
-        secret = secret.replace(/^2FA\//i, '');
-        
-        // 重定向并携带密钥参数（禁用缓存）
-        if (secret) {
-            window.location.replace(`/?secret=${encodeURIComponent(secret)}&nocache`);
-        } else {
+        // 防止重复重定向（添加标记）
+        if (sessionStorage.getItem('redirected') === 'true') {
+            // 如果已经重定向过，直接跳转到主页
             window.location.replace('/?nocache');
+            sessionStorage.removeItem('redirected');
+        } else {
+            // 标记已重定向，避免循环
+            sessionStorage.setItem('redirected', 'true');
+            
+            // 提取路径中的密钥（兼容子路径部署）
+            const path = window.location.pathname;
+            let secret = path.slice(1); // 去掉开头的"/"
+            
+            // 移除可能的仓库路径前缀（如/2FA/）
+            secret = secret.replace(/^2FA\//i, '');
+            
+            // 清理无效字符，仅保留Base32合法字符（A-Za-z2-7=）
+            secret = secret.replace(/[^A-Za-z2-7=]/g, '');
+            
+            // 重定向并携带密钥参数（禁用缓存，参数顺序优化）
+            if (secret && secret.length > 0) {
+                window.location.replace(`/?nocache&secret=${encodeURIComponent(secret)}`);
+            } else {
+                window.location.replace('/?nocache');
+            }
         }
     </script>
 </head>
 <body>
-    <p>正在跳转到验证码工具...</p >
+    <p>正在跳转到验证码工具...</p>
 </body>
 </html>
