@@ -7,7 +7,6 @@
         body { font-family: Arial, sans-serif; max-width: 800px; margin: 50px auto; text-align: center; padding: 0 20px; }
         h1 { color: #333; margin-bottom: 50px; font-size: 2.5em; }
         .input-group { margin: 50px 0; }
-        /* 高度减少1/3的超大输入框 */
         textarea { 
             padding: 50px 30px; 
             width: 100%; 
@@ -18,7 +17,7 @@
             box-sizing: border-box;
             outline: none;
             text-align: center;
-            min-height: 300px; /* 原450px → 减少1/3为300px */
+            min-height: 300px;
             resize: none;
             line-height: 1.8;
         }
@@ -26,7 +25,6 @@
             border-color: #5865F2; 
             box-shadow: 0 0 0 10px rgba(88, 101, 242, 0.15); 
         }
-        /* 验证码样式（点击可复制） */
         .code { 
             font-size: 6em; 
             font-weight: bold; 
@@ -79,13 +77,11 @@
 <body>
     <h1>淘宝：【midjourney杂货铺】专用验证码生成器</h1>
     <div class="input-group">
-        <!-- 高度调整后的超大输入框 -->
         <textarea id="secretInput" placeholder="粘贴2FA Secret密钥（支持任意TOTP平台）" autocomplete="off" rows="6"></textarea>
         <br>
         <button onclick="useCustomSecret()">生成验证码</button>
         <button onclick="resetToDefault()">恢复默认密钥</button>
     </div>
-    <!-- 点击复制验证码 -->
     <div class="code" id="totpCode" onclick="copyToClipboard()">未输入密钥</div>
     <div class="copy-tip" id="copyTip">✅ 验证码已复制到剪贴板！</div>
     <div class="countdown" id="countdown">剩余时间：--秒</div>
@@ -95,6 +91,14 @@
         const DEFAULT_SECRET = "Y3MPIW4CAGCHEIRAZYLDE4ATT3AIF4RN";
         let currentSecret = DEFAULT_SECRET;
         const INTERVAL = 30;
+
+        // 读取URL查询参数中的secret（支持404重定向传递）
+        const urlParams = new URLSearchParams(window.location.search);
+        const secretFromUrl = urlParams.get('secret');
+        if (secretFromUrl) {
+            currentSecret = decodeURIComponent(secretFromUrl);
+            document.getElementById('secretInput').value = currentSecret;
+        }
 
         // 原生Base32解码
         function base32Decode(encoded) {
@@ -148,7 +152,6 @@
             const code = await generateTOTP();
             const codeElem = document.getElementById('totpCode');
             codeElem.textContent = code;
-            // 重置复制状态
             codeElem.classList.remove('copied');
             
             const remaining = INTERVAL - (Math.floor(Date.now() / 1000) % INTERVAL);
@@ -189,7 +192,6 @@
                 const tipElem = document.getElementById('copyTip');
                 codeElem.classList.add('copied');
                 tipElem.classList.add('show');
-                // 3秒后隐藏提示
                 setTimeout(() => {
                     tipElem.classList.remove('show');
                 }, 3000);
@@ -201,7 +203,6 @@
             updateCode();
             setInterval(updateCode, 1000);
             
-            // 回车自动生成刷新（禁止Shift+Enter换行）
             document.getElementById('secretInput').addEventListener('keypress', (e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
