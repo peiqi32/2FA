@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>淘宝：【midjourney杂货铺】专用验证码生成器</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            max-width: 800px; 
+            margin: 50px auto; 
+            text-align: center; 
+            padding: 0 20px; 
+            transform: scale(0.8); 
+            transform-origin: top center;
+        }
+        h1 { color: #333; margin-bottom: 50px; font-size: 2.5em; }
+        .input-group { margin: 50px 0; }
+        textarea { 
+            padding: 50px 30px; 
+            width: 100%; 
+            font-size: 2.4em; 
+            border: 5px solid #eee; 
+            border-radius: 20px; 
+            margin-bottom: 30px;
+            box-sizing: border-box;
+            outline: none;
+            text-align: center;
+            min-height: 300px; 
+            resize: none;
+            line-height: 1.8;
+        }
+        textarea:focus { 
+            border-color: #5865F2; 
+            box-shadow: 0 0 0 10px rgba(88, 101, 242, 0.15); 
+        }
+        .code { 
+            font-size: 6em; 
+            font-weight: bold; 
+            color: #5865F2; 
+            letter-spacing: 10px; 
+            margin: 60px 0; 
+            padding: 40px; 
+            border-radius: 20px; 
+            background: #f8f9ff; 
+            cursor: pointer; 
+            transition: all 0.3s;
+        }
+        .code:hover { 
+            background: #f0f2ff; 
+            transform: scale(1.02); 
+        }
+        .code.copied { 
+            color: #27ae60; 
+            background: #eafaf1; 
+        }
+        .copy-tip { 
+            color: #888; 
+            font-size: 1.8em; 
+            margin-top: -40px; 
+            margin-bottom: 40px; 
+            opacity: 0; 
+            transition: opacity 0.3s;
+        }
+        .copy-tip.show { opacity: 1; }
+        .countdown { 
+            color: #666; 
+            font-size: 2em; 
+            margin-bottom: 40px; 
+        }
+        button { 
+            padding: 25px 50px; 
+            background: #5865F2; 
+            color: white; 
+            border: none; 
+            border-radius: 15px; 
+            cursor: pointer; 
+            margin: 0 15px;
+            font-size: 2em; 
+            transition: all 0.2s;
+        }
+        button:hover { background: #4752C4; }
+        button:active { transform: scale(0.96); }
+        .error-tip {
+            color: #e74c3c;
+            font-size: 1.8em;
+            margin: 20px 0;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <h1>淘宝：【midjourney杂货铺】专用验证码生成器</h1>
+    <div class="input-group">
+        <textarea id="secretInput" placeholder="请在此处粘贴秘钥（midjourney杂货铺）" autocomplete="off" rows="6"></textarea>
+        <br>
+        <button onclick="useCustomSecret()">生成验证码</button>
+        <button onclick="resetToDefault()">恢复默认密钥</button>
+    </div>
+    <div class="error-tip" id="errorTip">❌ 生成失败：请检查密钥格式或网络环境</div>
+    <div class="code" id="totpCode">未输入密钥</div>
+    <div class="copy-tip" id="copyTip">✅ 验证码已复制到剪贴板！</div>
+    <div class="countdown" id="countdown">剩余时间：--秒</div>
+    <button onclick="refreshCode()">手动刷新</button>
+
+    <script>
+        // 同时支持URL参数和路径传密钥
+        function getSecretKey() {
+            // 1. 优先从URL参数获取（?key=xxx）
+            const urlParams = new URLSearchParams(window.location.search);
+            let key = urlParams.get('key');
+            
+            // 2. 若参数无，则从路径最后一段获取
+            if (!key) {
+                const pathParts = window.location.pathname.split('/').filter(part => part);
+                key = pathParts.length > 0 ? pathParts[pathParts.length - 1] : null;
+            }
+            
+            // 3. 若都无，则用默认密钥
+            if (!key) key = "FXVLGSEADALXX6BBY3NT3FUU2BUVV7QA";
+            
+            // 清理密钥格式
+            return key.replace(/%20/g, '').replace(/\s+/g, '').toUpperCase();
+        }
+
+        let currentSecret = getSecretKey();
+        const INTERVAL = 30;
+        let timer = null;
+
+        function base32Decode(encoded) {
+            const base32Alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+            encoded = encoded.replace(/[^A-Z2-7]/gi, '').toUpperCase();
+            
+            if (encoded.length === 0) throw new Error('密钥不能为空');
+
+            let bits = '';
+            const paddingLength = (5 - (encoded.length % 5)) % 5;
+            encoded += 'A'.repeat(paddingLength);
+
+            for (let i = 0; i < encoded.length; i++) {
+                const idx = base32Alphabet.indexOf(encoded[i]);
+                if (idx === -1) continue;
+                bits += idx.toString(2).padStart(5, '0');
+            }
+
+            const bytes = [];
+            for (let i = 0; i < bits.length; i += 8) {
+                const byteStr = bits.slice(i, i + 8);
+                if (byteStr.length < 4) break;
+                bytes.push(parseInt(byteStr.padEnd(8, '0'), 2));
+            }
+
+            return new Uint8Array(bytes);
+        }
+
+        async function hmacSHA1(key, data) {
+            try {
+                if (!window.crypto || !window.crypto.subtle) {
+                    throw new Error('浏览器不支持Web Crypto API');
+                }
+                const cryptoKey = await crypto.subtle.importKey(
+                    'raw', key, 
+                    { name: 'HMAC', hash: { name: 'SHA-1' } }, 
+                    false, 
+                    ['sign']
+                );
+                const signature = await crypto.subtle.sign('HMAC', cryptoKey, data);
+                return new Uint8Array(signature);
+            } catch (err) {
+                console.error('HMAC计算失败:', err);
+                throw err;
+            }
+        }
+
+        async function generateTOTP() {
+            try {
+                document.getElementById('errorTip').style.display = 'none';
+                if (!currentSecret) return '请输入密钥';
+
+                const time = Math.floor(Date.now() / 1000 / INTERVAL);
+                const timeBuffer = new ArrayBuffer(8);
+                const dv = new DataView(timeBuffer);
+                if (time > 0xFFFFFFFF) {
+                    dv.setUint32(0, Math.floor(time / 0x100000000), false);
+                    dv.setUint32(4, time & 0xFFFFFFFF, false);
+                } else {
+                    dv.setUint32(4, time, false);
+                }
+
+                const secretBytes = base32Decode(currentSecret);
+                const hmacResult = await hmacSHA1(secretBytes, timeBuffer);
+
+                const offset = hmacResult[hmacResult.length - 1] & 0x0F;
+                const codeInt = ((hmacResult[offset] & 0x7F) << 24) |
+                                ((hmacResult[offset + 1] & 0xFF) << 16) |
+                                ((hmacResult[offset + 2] & 0xFF) << 8) |
+                                (hmacResult[offset + 3] & 0xFF);
+                const code = (codeInt % 1000000).toString().padStart(6, '0');
+
+                return code;
+            } catch (e) {
+                console.error('生成验证码失败:', e);
+                document.getElementById('errorTip').style.display = 'block';
+                return '密钥无效';
+            }
+        }
+
+        async function updateCode() {
+            try {
+                const code = await generateTOTP();
+                const codeElem = document.getElementById('totpCode');
+                codeElem.textContent = code;
+                codeElem.classList.remove('copied');
+
+                copyToClipboard();
+
+                const remaining = INTERVAL - (Math.floor(Date.now() / 1000) % INTERVAL);
+                document.getElementById('countdown').textContent = `剩余时间：${remaining}秒`;
+
+                if (timer) clearTimeout(timer);
+                timer = setTimeout(updateCode, remaining * 1000);
+            } catch (err) {
+                console.error('更新验证码失败:', err);
+                document.getElementById('errorTip').style.display = 'block';
+                document.getElementById('totpCode').textContent = '生成失败';
+            }
+        }
+
+        function refreshCode() {
+            updateCode();
+        }
+
+        function useCustomSecret() {
+            const input = document.getElementById('secretInput').value.trim();
+            if (input) {
+                currentSecret = input;
+                updateCode();
+            } else {
+                alert('请输入有效的Secret密钥');
+            }
+        }
+
+        function resetToDefault() {
+            currentSecret = "FXVLGSEADALXX6BBY3NT3FUU2BUVV7QA";
+            document.getElementById('secretInput').value = "";
+            document.getElementById('errorTip').style.display = 'none';
+            updateCode();
+            alert('已恢复默认密钥');
+        }
+
+        function copyToClipboard() {
+            const code = document.getElementById('totpCode').textContent;
+            const invalidCodes = ['未输入密钥', '密钥无效', '生成失败', '请输入密钥'];
+            if (invalidCodes.includes(code)) return;
+
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(code)
+                    .then(showCopyTip)
+                    .catch(() => fallbackCopy(code));
+            } else {
+                fallbackCopy(code);
+            }
+        }
+
+        function fallbackCopy(text) {
+            const textArea = document.createElement('textarea');
+            textArea.value = text;
+            textArea.style.position = 'fixed';
+            textArea.style.left = '-9999px';
+            document.body.appendChild(textArea);
+            textArea.select();
+            try {
+                document.execCommand('copy');
+                showCopyTip();
+            } catch (err) {
+                alert('复制失败，请手动复制：' + text);
+            } finally {
+                document.body.removeChild(textArea);
+            }
+        }
+
+        function showCopyTip() {
+            const codeElem = document.getElementById('totpCode');
+            const tipElem = document.getElementById('copyTip');
+            codeElem.classList.add('copied');
+            tipElem.classList.add('show');
+            setTimeout(() => {
+                tipElem.classList.remove('show');
+                codeElem.classList.remove('copied');
+            }, 3000);
+        }
+
+        window.onload = () => {
+            document.getElementById('secretInput').value = currentSecret;
+            updateCode();
+
+            document.getElementById('secretInput').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    useCustomSecret();
+                }
+            });
+
+            window.addEventListener('beforeunload', () => {
+                if (timer) clearTimeout(timer);
+            });
+
+            document.getElementById('totpCode').addEventListener('click', copyToClipboard);
+        };
+    </script>
+</body>
+</html>
