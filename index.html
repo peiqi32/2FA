@@ -2,33 +2,121 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>TOTP验证工具</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>电脑端2FA验证码生成器</title>
     <style>
-        body { font-family: Arial; max-width: 800px; margin: 20px auto; padding: 20px; }
-        .item { margin: 15px 0; padding: 10px; border: 1px solid #eee; border-radius: 8px; }
-        .code { font-size: 2em; font-weight: bold; color: #5865F2; }
-        input { width: 100%; padding: 10px; font-size: 1.2em; margin: 10px 0; }
-        button { padding: 10px 20px; background: #5865F2; color: white; border: none; border-radius: 8px; cursor: pointer; }
+        body { 
+            font-family: Arial, sans-serif; 
+            max-width: 800px; 
+            margin: 50px auto; 
+            text-align: center; 
+            padding: 0 20px; 
+            transform: scale(0.8); 
+            transform-origin: top center;
+        }
+        h1 { color: #333; margin-bottom: 50px; font-size: 2.5em; }
+        .input-group { margin: 50px 0; }
+        textarea { 
+            padding: 50px 30px; 
+            width: 100%; 
+            font-size: 2.4em; 
+            border: 5px solid #eee; 
+            border-radius: 20px; 
+            margin-bottom: 30px;
+            box-sizing: border-box;
+            outline: none;
+            text-align: center;
+            min-height: 300px; 
+            resize: none;
+            line-height: 1.8;
+        }
+        textarea:focus { 
+            border-color: #5865F2; 
+            box-shadow: 0 0 0 10px rgba(88, 101, 242, 0.15); 
+        }
+        .code { 
+            font-size: 6em; 
+            font-weight: bold; 
+            color: #5865F2; 
+            letter-spacing: 10px; 
+            margin: 60px 0; 
+            padding: 40px; 
+            border-radius: 20px; 
+            background: #f8f9ff; 
+            cursor: pointer; 
+            transition: all 0.3s;
+        }
+        .code:hover { 
+            background: #f0f2ff; 
+            transform: scale(1.02); 
+        }
+        .code.copied { 
+            color: #27ae60; 
+            background: #eafaf1; 
+        }
+        .copy-tip { 
+            color: #888; 
+            font-size: 1.8em; 
+            margin-top: -40px; 
+            margin-bottom: 40px; 
+            opacity: 0; 
+            transition: opacity 0.3s;
+        }
+        .copy-tip.show { opacity: 1; }
+        .countdown { 
+            color: #666; 
+            font-size: 2em; 
+            margin-bottom: 40px; 
+        }
+        button { 
+            padding: 25px 50px; 
+            background: #5865F2; 
+            color: white; 
+            border: none; 
+            border-radius: 15px; 
+            cursor: pointer; 
+            margin: 0 15px;
+            font-size: 2em;
+            transition: all 0.2s;
+        }
+        button:hover { background: #4752C4; }
+        button:active { transform: scale(0.96); }
+        .time-adjust {
+            margin: 20px 0;
+        }
+        .time-adjust button {
+            padding: 15px 30px;
+            font-size: 1.5em;
+            margin: 0 10px;
+        }
     </style>
 </head>
 <body>
-    <h1>TOTP验证码验证工具</h1>
-    <input type="text" id="secret" placeholder="输入你的密钥（如FXVLGSEADALXX6BBY3NT3FUU2BUVV7QA）" value="FXVLGSEADALXX6BBY3NT3FUU2BUVV7QA">
-    <button onclick="checkCode()">生成验证</button>
-    
-    <div class="item">
-        <div>当前UTC时间戳：<span id="utcTime"></span></div>
-        <div>当前本地时间：<span id="localTime"></span></div>
+    <h1>电脑端2FA验证码生成器</h1>
+    <div class="input-group">
+        <textarea id="secretInput" placeholder="粘贴2FA Secret密钥" autocomplete="off" rows="6">FXVLGSEADALXX6BBY3NT3FUU2BUVV7QA</textarea>
+        <br>
+        <button onclick="useCustomSecret()">生成验证码</button>
+        <button onclick="resetToDefault()">恢复默认密钥</button>
     </div>
-    
-    <div class="item">
-        <div>当前步长验证码（正确）：<span class="code" id="currentCode"></span></div>
-        <div>上一步长验证码（时间慢30秒）：<span class="code" id="prevCode"></span></div>
-        <div>下一步长验证码（时间快30秒）：<span class="code" id="nextCode"></span></div>
+    <!-- 时间偏移调整按钮 -->
+    <div class="time-adjust">
+        <button onclick="adjustTime(-1)">时间-30秒</button>
+        <button onclick="adjustTime(0)">恢复时间</button>
+        <button onclick="adjustTime(1)">时间+30秒</button>
     </div>
+    <div class="code" id="totpCode" onclick="copyToClipboard()">未输入密钥</div>
+    <div class="copy-tip" id="copyTip">✅ 验证码已复制到剪贴板！</div>
+    <div class="countdown" id="countdown">剩余时间：--秒</div>
+    <button onclick="refreshCode()">手动刷新</button>
 
     <script>
-        // 标准Base32解码
+        const DEFAULT_SECRET = "FXVLGSEADALXX6BBY3NT3FUU2BUVV7QA";
+        let currentSecret = DEFAULT_SECRET;
+        const INTERVAL = 30;
+        let timeOffset = 0; // 时间偏移量（解决时间不同步）
+
+        // 标准Base32解码（和验证工具一致）
         function base32Decode(encoded) {
             const base32Chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
             encoded = encoded.toUpperCase().replace(/[^A-Z2-7]/g, '');
@@ -47,7 +135,7 @@
             return new Uint8Array(bytes);
         }
 
-        // 纯JS HMAC-SHA1
+        // 标准HMAC-SHA1实现（和验证工具一致）
         function hmacSHA1(key, data) {
             function sha1(data) {
                 function rotateLeft(n, s) { return (n << s) | (n >>> (32 - s)); }
@@ -89,38 +177,106 @@
             return new Uint8Array(sha1(outer).match(/.{2}/g).map(h => parseInt(h, 16)));
         }
 
-        // 生成指定时间步长的验证码
-        function generateTOTP(secret, timeStepOffset = 0) {
-            const secretBytes = base32Decode(secret);
-            const time = Math.floor(Date.now() / 1000 / 30) + timeStepOffset;
-            const timeBuffer = new ArrayBuffer(8);
-            new DataView(timeBuffer).setBigInt64(0, BigInt(time), false);
-            const timeBytes = new Uint8Array(timeBuffer);
-            const hmacResult = hmacSHA1(secretBytes, timeBytes);
-            const offset = hmacResult[hmacResult.length - 1] & 0x0F;
-            const code = (
-                ((hmacResult[offset] & 0x7F) << 24) |
-                ((hmacResult[offset + 1] & 0xFF) << 16) |
-                ((hmacResult[offset + 2] & 0xFF) << 8) |
-                (hmacResult[offset + 3] & 0xFF)
-            ) % 1000000;
-            return code.toString().padStart(6, '0');
+        // 生成TOTP验证码（和验证工具逻辑完全一致）
+        function generateTOTP() {
+            try {
+                if (!currentSecret || currentSecret.trim() === '') {
+                    return '请输入密钥';
+                }
+                const secretBytes = base32Decode(currentSecret);
+                if (secretBytes.length === 0) {
+                    return '密钥格式错误';
+                }
+                // 计算时间步长（加入偏移量）
+                const time = Math.floor(Date.now() / 1000 / INTERVAL) + timeOffset;
+                const timeBuffer = new ArrayBuffer(8);
+                new DataView(timeBuffer).setBigInt64(0, BigInt(time), false);
+                const timeBytes = new Uint8Array(timeBuffer);
+                // 计算HMAC-SHA1
+                const hmacResult = hmacSHA1(secretBytes, timeBytes);
+                // 动态截断
+                const offset = hmacResult[hmacResult.length - 1] & 0x0F;
+                const code = (
+                    ((hmacResult[offset] & 0x7F) << 24) |
+                    ((hmacResult[offset + 1] & 0xFF) << 16) |
+                    ((hmacResult[offset + 2] & 0xFF) << 8) |
+                    (hmacResult[offset + 3] & 0xFF)
+                ) % 1000000;
+                return code.toString().padStart(6, '0');
+            } catch (e) {
+                console.error('生成失败:', e);
+                return '密钥无效';
+            }
         }
 
-        // 验证主函数
-        function checkCode() {
-            const secret = document.getElementById('secret').value.trim();
-            // 显示时间信息
-            document.getElementById('utcTime').textContent = Math.floor(Date.now() / 1000) + ' (UTC秒级)';
-            document.getElementById('localTime').textContent = new Date().toString();
-            // 生成当前/上一个/下一个步长的验证码
-            document.getElementById('currentCode').textContent = generateTOTP(secret, 0);
-            document.getElementById('prevCode').textContent = generateTOTP(secret, -1);
-            document.getElementById('nextCode').textContent = generateTOTP(secret, 1);
+        // 更新验证码和倒计时
+        function updateCode() {
+            const code = generateTOTP();
+            document.getElementById('totpCode').textContent = code;
+            document.getElementById('totpCode').classList.remove('copied');
+            
+            const remaining = INTERVAL - (Math.floor(Date.now() / 1000) % INTERVAL);
+            document.getElementById('countdown').textContent = `剩余时间：${remaining}秒`;
+        }
+
+        // 手动刷新
+        function refreshCode() {
+            updateCode();
+        }
+
+        // 使用自定义密钥
+        function useCustomSecret() {
+            const input = document.getElementById('secretInput').value.trim();
+            if (input) {
+                currentSecret = input;
+                updateCode();
+            } else {
+                alert('请输入有效的Secret密钥');
+            }
+        }
+
+        // 恢复默认密钥
+        function resetToDefault() {
+            currentSecret = DEFAULT_SECRET;
+            document.getElementById('secretInput').value = DEFAULT_SECRET;
+            updateCode();
+            alert('已恢复默认密钥');
+        }
+
+        // 调整时间偏移
+        function adjustTime(offset) {
+            timeOffset = offset;
+            updateCode();
+        }
+
+        // 复制验证码
+        function copyToClipboard() {
+            const code = document.getElementById('totpCode').textContent;
+            if (code.includes('未输入') || code.includes('无效') || code.includes('错误')) return;
+            
+            navigator.clipboard.writeText(code).then(() => {
+                document.getElementById('totpCode').classList.add('copied');
+                document.getElementById('copyTip').classList.add('show');
+                setTimeout(() => {
+                    document.getElementById('copyTip').classList.remove('show');
+                }, 3000);
+            }).catch(err => {
+                alert('复制失败，请手动复制');
+            });
         }
 
         // 初始化
-        window.onload = checkCode;
+        window.onload = () => {
+            updateCode();
+            setInterval(updateCode, 1000);
+            
+            document.getElementById('secretInput').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    useCustomSecret();
+                }
+            });
+        };
     </script>
 </body>
 </html>
