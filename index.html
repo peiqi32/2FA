@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>电脑端专用2FA验证码工具</title>
+    <title>淘宝：【midjourney杂货铺】专用验证码生成器</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
         body { 
@@ -87,16 +87,10 @@
             margin: 20px 0;
             display: none;
         }
-        .env-tip {
-            color: #f39c12;
-            font-size: 1.6em;
-            margin: 10px 0;
-        }
     </style>
 </head>
 <body>
-    <h1>电脑端2FA验证码生成器</h1>
-    <div class="env-tip" id="envTip">⚠️ 请确保使用HTTPS/localhost环境</div>
+    <h1>淘宝：【midjourney杂货铺】专用验证码生成器</h1>
     <div class="input-group">
         <textarea id="secretInput" placeholder="粘贴2FA Secret密钥（支持任意TOTP平台）" autocomplete="off" rows="6">XKAC5W2OF4V6QDDNDT7RECZWHKOKK7X2</textarea>
         <br>
@@ -110,58 +104,48 @@
     <button onclick="refreshCode()">手动刷新</button>
 
     <script>
-        // 替换为你的正确密钥作为默认值
         const DEFAULT_SECRET = "XKAC5W2OF4V6QDDNDT7RECZWHKOKK7X2";
         let currentSecret = DEFAULT_SECRET;
         const INTERVAL = 30;
         let timer = null;
 
-        // 超兼容Base32解码（适配任意合法Base32密钥）
         function base32Decode(encoded) {
             const base32Alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
-            // 强力清理：仅保留Base32允许的字符，转大写
             encoded = encoded.replace(/[^A-Z2-7]/gi, '').toUpperCase();
             
             if (encoded.length === 0) throw new Error('密钥不能为空');
 
             let bits = '';
-            // 补全为5的倍数长度（Base32标准）
             const paddingLength = (5 - (encoded.length % 5)) % 5;
             encoded += 'A'.repeat(paddingLength);
 
-            // 转换为5位二进制串
             for (let i = 0; i < encoded.length; i++) {
                 const idx = base32Alphabet.indexOf(encoded[i]);
-                if (idx === -1) continue; // 跳过异常字符（兜底）
+                if (idx === -1) continue;
                 bits += idx.toString(2).padStart(5, '0');
             }
 
-            // 转换为字节数组（处理末尾不足8位的情况）
             const bytes = [];
             for (let i = 0; i < bits.length; i += 8) {
                 const byteStr = bits.slice(i, i + 8);
-                if (byteStr.length < 4) break; // 忽略过短的无效字节
+                if (byteStr.length < 4) break;
                 bytes.push(parseInt(byteStr.padEnd(8, '0'), 2));
             }
 
             return new Uint8Array(bytes);
         }
 
-        // 安全的HMAC-SHA1实现（兼容所有浏览器）
         async function hmacSHA1(key, data) {
             try {
-                // 检查Crypto API可用性
                 if (!window.crypto || !window.crypto.subtle) {
                     throw new Error('浏览器不支持Web Crypto API');
                 }
-                // 导入密钥
                 const cryptoKey = await crypto.subtle.importKey(
                     'raw', key, 
                     { name: 'HMAC', hash: { name: 'SHA-1' } }, 
                     false, 
                     ['sign']
                 );
-                // 计算HMAC
                 const signature = await crypto.subtle.sign('HMAC', cryptoKey, data);
                 return new Uint8Array(signature);
             } catch (err) {
@@ -170,17 +154,14 @@
             }
         }
 
-        // 生成TOTP验证码（完整容错）
         async function generateTOTP() {
             try {
                 document.getElementById('errorTip').style.display = 'none';
                 if (!currentSecret) return '请输入密钥';
 
-                // 处理时间戳（兼容所有浏览器，避免BigInt问题）
                 const time = Math.floor(Date.now() / 1000 / INTERVAL);
                 const timeBuffer = new ArrayBuffer(8);
                 const dv = new DataView(timeBuffer);
-                // 兼容32/64位系统
                 if (time > 0xFFFFFFFF) {
                     dv.setUint32(0, Math.floor(time / 0x100000000), false);
                     dv.setUint32(4, time & 0xFFFFFFFF, false);
@@ -188,11 +169,9 @@
                     dv.setUint32(4, time, false);
                 }
 
-                // 解码密钥并计算HMAC
                 const secretBytes = base32Decode(currentSecret);
                 const hmacResult = await hmacSHA1(secretBytes, timeBuffer);
 
-                // 提取6位验证码
                 const offset = hmacResult[hmacResult.length - 1] & 0x0F;
                 const codeInt = ((hmacResult[offset] & 0x7F) << 24) |
                                 ((hmacResult[offset + 1] & 0xFF) << 16) |
@@ -208,7 +187,6 @@
             }
         }
 
-        // 更新验证码和倒计时（精准定时）
         async function updateCode() {
             try {
                 const code = await generateTOTP();
@@ -216,11 +194,9 @@
                 codeElem.textContent = code;
                 codeElem.classList.remove('copied');
 
-                // 更新倒计时
                 const remaining = INTERVAL - (Math.floor(Date.now() / 1000) % INTERVAL);
                 document.getElementById('countdown').textContent = `剩余时间：${remaining}秒`;
 
-                // 清理旧定时器，设置下一次刷新
                 if (timer) clearTimeout(timer);
                 timer = setTimeout(updateCode, remaining * 1000);
             } catch (err) {
@@ -230,12 +206,10 @@
             }
         }
 
-        // 手动刷新验证码
         function refreshCode() {
             updateCode();
         }
 
-        // 使用自定义密钥（保留输入框内容）
         function useCustomSecret() {
             const input = document.getElementById('secretInput').value.trim();
             if (input) {
@@ -246,7 +220,6 @@
             }
         }
 
-        // 恢复默认密钥（你的正确密钥）
         function resetToDefault() {
             currentSecret = DEFAULT_SECRET;
             document.getElementById('secretInput').value = DEFAULT_SECRET;
@@ -255,13 +228,12 @@
             alert('已恢复默认密钥');
         }
 
-        // 复制验证码到剪贴板（兼容所有浏览器）
+        // 点击验证码自动复制
         function copyToClipboard() {
             const code = document.getElementById('totpCode').textContent;
             const invalidCodes = ['未输入密钥', '密钥无效', '生成失败', '请输入密钥'];
             if (invalidCodes.includes(code)) return;
 
-            // 优先使用Clipboard API，失败则降级
             if (navigator.clipboard) {
                 navigator.clipboard.writeText(code)
                     .then(showCopyTip)
@@ -271,7 +243,6 @@
             }
         }
 
-        // 复制降级方案（兼容旧浏览器）
         function fallbackCopy(text) {
             const textArea = document.createElement('textarea');
             textArea.value = text;
@@ -289,7 +260,6 @@
             }
         }
 
-        // 显示复制成功提示
         function showCopyTip() {
             const codeElem = document.getElementById('totpCode');
             const tipElem = document.getElementById('copyTip');
@@ -301,17 +271,9 @@
             }, 3000);
         }
 
-        // 页面初始化
         window.onload = () => {
-            // 检测安全上下文
-            if (!window.isSecureContext) {
-                document.getElementById('envTip').textContent = '❌ 当前环境非安全上下文，Crypto API不可用！';
-            }
-
-            // 初始化验证码
             updateCode();
 
-            // 回车提交输入框
             document.getElementById('secretInput').addEventListener('keypress', (e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
@@ -319,12 +281,11 @@
                 }
             });
 
-            // 页面卸载清理定时器
             window.addEventListener('beforeunload', () => {
                 if (timer) clearTimeout(timer);
             });
 
-            // 绑定验证码点击复制事件
+            // 绑定验证码点击事件（自动复制）
             document.getElementById('totpCode').addEventListener('click', copyToClipboard);
         };
     </script>
