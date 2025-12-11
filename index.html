@@ -2,9 +2,9 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>电脑端专用2FA验证码工具</title>
     <style>
-        /* 整体缩放80% */
         body { 
             font-family: Arial, sans-serif; 
             max-width: 800px; 
@@ -12,11 +12,10 @@
             text-align: center; 
             padding: 0 20px; 
             transform: scale(0.8); 
-            transform-origin: top center; /* 缩放原点固定在顶部居中，避免偏移 */
+            transform-origin: top center;
         }
         h1 { color: #333; margin-bottom: 50px; font-size: 2.5em; }
         .input-group { margin: 50px 0; }
-        /* 缩放后的输入框 */
         textarea { 
             padding: 50px 30px; 
             width: 100%; 
@@ -35,7 +34,6 @@
             border-color: #5865F2; 
             box-shadow: 0 0 0 10px rgba(88, 101, 242, 0.15); 
         }
-        /* 缩放后的验证码区域 */
         .code { 
             font-size: 6em; 
             font-weight: bold; 
@@ -70,7 +68,6 @@
             font-size: 2em; 
             margin-bottom: 40px; 
         }
-        /* 缩放后的按钮 */
         button { 
             padding: 25px 50px; 
             background: #5865F2; 
@@ -104,17 +101,26 @@
         let currentSecret = DEFAULT_SECRET;
         const INTERVAL = 30;
 
-        // 原生Base32解码
+        // 修复：兼容Base32填充符+宽松字符校验
         function base32Decode(encoded) {
             const base32Alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
-            encoded = encoded.replace(/\s+/g, '').toUpperCase();
+            // 1. 清理输入：移除空格、小写转大写、保留有效字符
+            encoded = encoded.replace(/\s+/g, '').toUpperCase().replace(/[^A-Z2-7]/g, '');
+            // 2. 补全Base32填充符（必须是8的倍数）
+            while (encoded.length % 8 !== 0) {
+                encoded += '=';
+            }
+
             let bits = '';
             let bytes = [];
             for (let i = 0; i < encoded.length; i++) {
-                const idx = base32Alphabet.indexOf(encoded[i]);
-                if (idx === -1) throw new Error('无效的Base32字符');
+                const char = encoded[i];
+                if (char === '=') break; // 跳过填充符
+                const idx = base32Alphabet.indexOf(char);
+                if (idx === -1) continue; // 忽略无效字符（避免抛出错误）
                 bits += idx.toString(2).padStart(5, '0');
             }
+            // 转换为8位字节
             for (let i = 0; i < bits.length; i += 8) {
                 const byte = bits.slice(i, i + 8);
                 if (byte.length === 8) bytes.push(parseInt(byte, 2));
@@ -122,31 +128,41 @@
             return new Uint8Array(bytes);
         }
 
-        // 原生HMAC-SHA1计算
+        // 原生HMAC-SHA1计算（兼容GitHub Pages HTTPS）
         async function hmacSHA1(key, data) {
-            const cryptoKey = await crypto.subtle.importKey(
-                'raw', key, { name: 'HMAC', hash: 'SHA-1' }, false, ['sign']
-            );
-            const signature = await crypto.subtle.sign('HMAC', cryptoKey, data);
-            return new Uint8Array(signature);
+            try {
+                const cryptoKey = await crypto.subtle.importKey(
+                    'raw', key, { name: 'HMAC', hash: 'SHA-1' }, false, ['sign']
+                );
+                const signature = await crypto.subtle.sign('HMAC', cryptoKey, data);
+                return new Uint8Array(signature);
+            } catch (e) {
+                throw new Error('HMAC计算失败：' + e.message);
+            }
         }
 
         // 生成TOTP验证码
         async function generateTOTP() {
             try {
-                if (!currentSecret) return '请输入密钥';
+                if (!currentSecret || currentSecret.trim() === '') {
+                    return '请输入密钥';
+                }
                 const time = Math.floor(Date.now() / 1000 / INTERVAL);
                 const timeBuffer = new ArrayBuffer(8);
                 new DataView(timeBuffer).setBigInt64(0, BigInt(time), false);
 
                 const secretBytes = base32Decode(currentSecret);
-                const hmacResult = await hmacSHA1(secretBytes, timeBuffer);
+                if (secretBytes.length === 0) {
+                    return '密钥格式错误';
+                }
 
+                const hmacResult = await hmacSHA1(secretBytes, timeBuffer);
                 const offset = hmacResult[hmacResult.length - 1] & 0x0F;
                 const code = ((hmacResult[offset] << 24) | (hmacResult[offset + 1] << 16) |
                               (hmacResult[offset + 2] << 8) | hmacResult[offset + 3]) & 0x7FFFFFFF;
                 return (code % 1000000).toString().padStart(6, '0');
             } catch (e) {
+                console.error('生成失败：', e);
                 return '密钥无效';
             }
         }
@@ -189,7 +205,7 @@
         // 点击验证码复制到剪贴板
         function copyToClipboard() {
             const code = document.getElementById('totpCode').textContent;
-            if (code === '未输入密钥' || code === '密钥无效') return;
+            if (code === '未输入密钥' || code === '密钥无效' || code === '密钥格式错误') return;
             
             navigator.clipboard.writeText(code).then(() => {
                 const codeElem = document.getElementById('totpCode');
@@ -199,6 +215,8 @@
                 setTimeout(() => {
                     tipElem.classList.remove('show');
                 }, 3000);
+            }).catch(err => {
+                alert('复制失败，请手动复制');
             });
         }
 
@@ -211,7 +229,6 @@
                 if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
                     useCustomSecret();
-                    updateCode();
                 }
             });
         };
