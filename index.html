@@ -104,22 +104,23 @@
     <button onclick="refreshCode()">手动刷新</button>
 
     <script>
-        // 从URL中提取密钥（支持编码后的空格格式）
-        function getKeyFromUrl() {
-            const urlParams = new URLSearchParams(window.location.search);
-            let key = urlParams.get('key') || "FXVLGSEADALXX6BBY3NT3FUU2BUVV7QA";
-            // 解码URL编码的空格（%20）并清理格式
+        // 从URL路径中提取密钥（支持https://xxx.com/密钥 格式）
+        function getKeyFromPath() {
+            // 获取路径中最后一段内容（即密钥）
+            const pathParts = window.location.pathname.split('/').filter(part => part);
+            // 若路径有密钥则用路径的，否则用默认密钥
+            let key = pathParts.length > 0 ? pathParts[pathParts.length - 1] : "FXVLGSEADALXX6BBY3NT3FUU2BUVV7QA";
+            // 清理密钥格式（去除编码、空格等）
             return key.replace(/%20/g, '').replace(/\s+/g, '').toUpperCase();
         }
 
-        let currentSecret = getKeyFromUrl();
+        let currentSecret = getKeyFromPath();
         const INTERVAL = 30;
         let timer = null;
 
-        // 增强版Base32解码（适配带空格/编码格式的密钥）
+        // 增强版Base32解码（适配任意格式密钥）
         function base32Decode(encoded) {
             const base32Alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
-            // 清理所有非Base32字符（包括空格、特殊符号）
             encoded = encoded.replace(/[^A-Z2-7]/gi, '').toUpperCase();
             
             if (encoded.length === 0) throw new Error('密钥不能为空');
@@ -283,7 +284,7 @@
         }
 
         window.onload = () => {
-            // 填充URL中的密钥到输入框
+            // 填充路径中的密钥到输入框
             document.getElementById('secretInput').value = currentSecret;
             updateCode();
 
