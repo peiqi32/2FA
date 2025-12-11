@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>电脑端专用2FA验证码工具</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
         body { 
             font-family: Arial, sans-serif; 
@@ -75,7 +76,7 @@
             border-radius: 15px; 
             cursor: pointer; 
             margin: 0 15px;
-            font-size: 2em;
+            font-size: 2em; 
             transition: all 0.2s;
         }
         button:hover { background: #4752C4; }
@@ -86,12 +87,18 @@
             margin: 20px 0;
             display: none;
         }
+        .env-tip {
+            color: #f39c12;
+            font-size: 1.6em;
+            margin: 10px 0;
+        }
     </style>
 </head>
 <body>
     <h1>电脑端2FA验证码生成器</h1>
+    <div class="env-tip" id="envTip">⚠️ 请确保使用HTTPS/localhost环境</div>
     <div class="input-group">
-        <textarea id="secretInput" placeholder="粘贴2FA Secret密钥（支持任意TOTP平台）" autocomplete="off" rows="6"></textarea>
+        <textarea id="secretInput" placeholder="粘贴2FA Secret密钥（支持任意TOTP平台）" autocomplete="off" rows="6">XKAC5W2OF4V6QDDNDT7RECZWHKOKK7X2</textarea>
         <br>
         <button onclick="useCustomSecret()">生成验证码</button>
         <button onclick="resetToDefault()">恢复默认密钥</button>
@@ -103,46 +110,58 @@
     <button onclick="refreshCode()">手动刷新</button>
 
     <script>
-        const DEFAULT_SECRET = "Y3MPIW4CAGCHEIRAZYLDE4ATT3AIF4RN";
+        // 替换为你的正确密钥作为默认值
+        const DEFAULT_SECRET = "XKAC5W2OF4V6QDDNDT7RECZWHKOKK7X2";
         let currentSecret = DEFAULT_SECRET;
         const INTERVAL = 30;
         let timer = null;
 
-        // 增强版Base32解码（兼容Discord密钥格式）
+        // 超兼容Base32解码（适配任意合法Base32密钥）
         function base32Decode(encoded) {
             const base32Alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
-            // 处理小写、空格、补位符
-            encoded = encoded.replace(/\s+/g, '').replace(/=/g, '').toUpperCase();
-            if (encoded.length === 0) throw new Error('密钥不能为空');
+            // 强力清理：仅保留Base32允许的字符，转大写
+            encoded = encoded.replace(/[^A-Z2-7]/gi, '').toUpperCase();
             
+            if (encoded.length === 0) throw new Error('密钥不能为空');
+
             let bits = '';
-            let bytes = [];
+            // 补全为5的倍数长度（Base32标准）
+            const paddingLength = (5 - (encoded.length % 5)) % 5;
+            encoded += 'A'.repeat(paddingLength);
+
+            // 转换为5位二进制串
             for (let i = 0; i < encoded.length; i++) {
                 const idx = base32Alphabet.indexOf(encoded[i]);
-                if (idx === -1) throw new Error(`无效的Base32字符: ${encoded[i]}`);
+                if (idx === -1) continue; // 跳过异常字符（兜底）
                 bits += idx.toString(2).padStart(5, '0');
             }
-            // 补全不足8位的字节
-            while (bits.length % 8 !== 0) {
-                bits += '0';
-            }
+
+            // 转换为字节数组（处理末尾不足8位的情况）
+            const bytes = [];
             for (let i = 0; i < bits.length; i += 8) {
-                const byte = bits.slice(i, i + 8);
-                bytes.push(parseInt(byte, 2));
+                const byteStr = bits.slice(i, i + 8);
+                if (byteStr.length < 4) break; // 忽略过短的无效字节
+                bytes.push(parseInt(byteStr.padEnd(8, '0'), 2));
             }
+
             return new Uint8Array(bytes);
         }
 
-        // 安全的HMAC-SHA1计算（增加错误处理）
+        // 安全的HMAC-SHA1实现（兼容所有浏览器）
         async function hmacSHA1(key, data) {
             try {
-                // 检查crypto是否可用
+                // 检查Crypto API可用性
                 if (!window.crypto || !window.crypto.subtle) {
                     throw new Error('浏览器不支持Web Crypto API');
                 }
+                // 导入密钥
                 const cryptoKey = await crypto.subtle.importKey(
-                    'raw', key, { name: 'HMAC', hash: 'SHA-1' }, false, ['sign']
+                    'raw', key, 
+                    { name: 'HMAC', hash: { name: 'SHA-1' } }, 
+                    false, 
+                    ['sign']
                 );
+                // 计算HMAC
                 const signature = await crypto.subtle.sign('HMAC', cryptoKey, data);
                 return new Uint8Array(signature);
             } catch (err) {
@@ -151,34 +170,37 @@
             }
         }
 
-        // 生成TOTP验证码（完善错误捕获）
+        // 生成TOTP验证码（完整容错）
         async function generateTOTP() {
             try {
                 document.getElementById('errorTip').style.display = 'none';
                 if (!currentSecret) return '请输入密钥';
-                
-                // 时间戳处理（兼容不同浏览器的BigInt）
+
+                // 处理时间戳（兼容所有浏览器，避免BigInt问题）
                 const time = Math.floor(Date.now() / 1000 / INTERVAL);
                 const timeBuffer = new ArrayBuffer(8);
-                const dataView = new DataView(timeBuffer);
-                // 兼容不支持BigInt的环境
-                if (typeof BigInt !== 'undefined') {
-                    dataView.setBigInt64(0, BigInt(time), false);
+                const dv = new DataView(timeBuffer);
+                // 兼容32/64位系统
+                if (time > 0xFFFFFFFF) {
+                    dv.setUint32(0, Math.floor(time / 0x100000000), false);
+                    dv.setUint32(4, time & 0xFFFFFFFF, false);
                 } else {
-                    // 降级处理（仅兼容32位时间戳）
-                    dataView.setUint32(4, time, false);
+                    dv.setUint32(4, time, false);
                 }
 
+                // 解码密钥并计算HMAC
                 const secretBytes = base32Decode(currentSecret);
                 const hmacResult = await hmacSHA1(secretBytes, timeBuffer);
 
-                // 提取验证码
+                // 提取6位验证码
                 const offset = hmacResult[hmacResult.length - 1] & 0x0F;
-                const code = ((hmacResult[offset] & 0x7F) << 24) | 
-                              ((hmacResult[offset + 1] & 0xFF) << 16) | 
-                              ((hmacResult[offset + 2] & 0xFF) << 8) | 
-                              (hmacResult[offset + 3] & 0xFF);
-                return (code % 1000000).toString().padStart(6, '0');
+                const codeInt = ((hmacResult[offset] & 0x7F) << 24) |
+                                ((hmacResult[offset + 1] & 0xFF) << 16) |
+                                ((hmacResult[offset + 2] & 0xFF) << 8) |
+                                (hmacResult[offset + 3] & 0xFF);
+                const code = (codeInt % 1000000).toString().padStart(6, '0');
+
+                return code;
             } catch (e) {
                 console.error('生成验证码失败:', e);
                 document.getElementById('errorTip').style.display = 'block';
@@ -186,19 +208,19 @@
             }
         }
 
-        // 更新验证码和倒计时（防抖处理）
+        // 更新验证码和倒计时（精准定时）
         async function updateCode() {
             try {
                 const code = await generateTOTP();
                 const codeElem = document.getElementById('totpCode');
                 codeElem.textContent = code;
                 codeElem.classList.remove('copied');
-                
+
                 // 更新倒计时
                 const remaining = INTERVAL - (Math.floor(Date.now() / 1000) % INTERVAL);
                 document.getElementById('countdown').textContent = `剩余时间：${remaining}秒`;
-                
-                // 30秒自动刷新（重新计时）
+
+                // 清理旧定时器，设置下一次刷新
                 if (timer) clearTimeout(timer);
                 timer = setTimeout(updateCode, remaining * 1000);
             } catch (err) {
@@ -208,12 +230,12 @@
             }
         }
 
-        // 手动刷新
+        // 手动刷新验证码
         function refreshCode() {
             updateCode();
         }
 
-        // 使用自定义密钥
+        // 使用自定义密钥（保留输入框内容）
         function useCustomSecret() {
             const input = document.getElementById('secretInput').value.trim();
             if (input) {
@@ -224,39 +246,37 @@
             }
         }
 
-        // 恢复默认密钥
+        // 恢复默认密钥（你的正确密钥）
         function resetToDefault() {
             currentSecret = DEFAULT_SECRET;
-            document.getElementById('secretInput').value = '';
+            document.getElementById('secretInput').value = DEFAULT_SECRET;
             document.getElementById('errorTip').style.display = 'none';
             updateCode();
             alert('已恢复默认密钥');
         }
 
-        // 复制到剪贴板（增强容错）
+        // 复制验证码到剪贴板（兼容所有浏览器）
         function copyToClipboard() {
             const code = document.getElementById('totpCode').textContent;
             const invalidCodes = ['未输入密钥', '密钥无效', '生成失败', '请输入密钥'];
             if (invalidCodes.includes(code)) return;
-            
-            // 兼容不支持navigator.clipboard的环境
+
+            // 优先使用Clipboard API，失败则降级
             if (navigator.clipboard) {
-                navigator.clipboard.writeText(code).then(() => {
-                    showCopyTip();
-                }).catch(() => {
-                    fallbackCopy(code);
-                });
+                navigator.clipboard.writeText(code)
+                    .then(showCopyTip)
+                    .catch(() => fallbackCopy(code));
             } else {
                 fallbackCopy(code);
             }
         }
 
-        // 复制降级方案
+        // 复制降级方案（兼容旧浏览器）
         function fallbackCopy(text) {
             const textArea = document.createElement('textarea');
             textArea.value = text;
             textArea.style.position = 'fixed';
-            textArea.style.opacity = 0;
+            textArea.style.left = '-9999px';
             document.body.appendChild(textArea);
             textArea.select();
             try {
@@ -269,7 +289,7 @@
             }
         }
 
-        // 显示复制提示
+        // 显示复制成功提示
         function showCopyTip() {
             const codeElem = document.getElementById('totpCode');
             const tipElem = document.getElementById('copyTip');
@@ -281,17 +301,17 @@
             }, 3000);
         }
 
-        // 初始化
+        // 页面初始化
         window.onload = () => {
-            // 检查安全上下文
+            // 检测安全上下文
             if (!window.isSecureContext) {
-                alert('警告：当前环境非安全上下文，可能无法生成验证码！建议使用localhost或HTTPS环境');
+                document.getElementById('envTip').textContent = '❌ 当前环境非安全上下文，Crypto API不可用！';
             }
-            
-            // 首次加载
+
+            // 初始化验证码
             updateCode();
-            
-            // 回车提交
+
+            // 回车提交输入框
             document.getElementById('secretInput').addEventListener('keypress', (e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
@@ -299,10 +319,13 @@
                 }
             });
 
-            // 页面卸载时清理定时器
+            // 页面卸载清理定时器
             window.addEventListener('beforeunload', () => {
                 if (timer) clearTimeout(timer);
             });
+
+            // 绑定验证码点击复制事件
+            document.getElementById('totpCode').addEventListener('click', copyToClipboard);
         };
     </script>
 </body>
