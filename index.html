@@ -92,7 +92,7 @@
 <body>
     <h1>淘宝：【midjourney杂货铺】专用验证码生成器</h1>
     <div class="input-group">
-        <textarea id="secretInput" placeholder="粘贴2FA Secret密钥（支持任意TOTP平台）" autocomplete="off" rows="6">XKAC5W2OF4V6QDDNDT7RECZWHKOKK7X2</textarea>
+        <textarea id="secretInput" placeholder="请在此处粘贴秘钥（midjourney杂货铺）" autocomplete="off" rows="6"></textarea>
         <br>
         <button onclick="useCustomSecret()">生成验证码</button>
         <button onclick="resetToDefault()">恢复默认密钥</button>
@@ -104,13 +104,22 @@
     <button onclick="refreshCode()">手动刷新</button>
 
     <script>
-        const DEFAULT_SECRET = "XKAC5W2OF4V6QDDNDT7RECZWHKOKK7X2";
-        let currentSecret = DEFAULT_SECRET;
+        // 从URL中提取密钥（支持编码后的空格格式）
+        function getKeyFromUrl() {
+            const urlParams = new URLSearchParams(window.location.search);
+            let key = urlParams.get('key') || "FXVLGSEADALXX6BBY3NT3FUU2BUVV7QA";
+            // 解码URL编码的空格（%20）并清理格式
+            return key.replace(/%20/g, '').replace(/\s+/g, '').toUpperCase();
+        }
+
+        let currentSecret = getKeyFromUrl();
         const INTERVAL = 30;
         let timer = null;
 
+        // 增强版Base32解码（适配带空格/编码格式的密钥）
         function base32Decode(encoded) {
             const base32Alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+            // 清理所有非Base32字符（包括空格、特殊符号）
             encoded = encoded.replace(/[^A-Z2-7]/gi, '').toUpperCase();
             
             if (encoded.length === 0) throw new Error('密钥不能为空');
@@ -194,6 +203,9 @@
                 codeElem.textContent = code;
                 codeElem.classList.remove('copied');
 
+                // 自动复制验证码
+                copyToClipboard();
+
                 const remaining = INTERVAL - (Math.floor(Date.now() / 1000) % INTERVAL);
                 document.getElementById('countdown').textContent = `剩余时间：${remaining}秒`;
 
@@ -221,14 +233,13 @@
         }
 
         function resetToDefault() {
-            currentSecret = DEFAULT_SECRET;
-            document.getElementById('secretInput').value = DEFAULT_SECRET;
+            currentSecret = "FXVLGSEADALXX6BBY3NT3FUU2BUVV7QA";
+            document.getElementById('secretInput').value = "";
             document.getElementById('errorTip').style.display = 'none';
             updateCode();
             alert('已恢复默认密钥');
         }
 
-        // 点击验证码自动复制
         function copyToClipboard() {
             const code = document.getElementById('totpCode').textContent;
             const invalidCodes = ['未输入密钥', '密钥无效', '生成失败', '请输入密钥'];
@@ -272,6 +283,8 @@
         }
 
         window.onload = () => {
+            // 填充URL中的密钥到输入框
+            document.getElementById('secretInput').value = currentSecret;
             updateCode();
 
             document.getElementById('secretInput').addEventListener('keypress', (e) => {
@@ -285,7 +298,6 @@
                 if (timer) clearTimeout(timer);
             });
 
-            // 绑定验证码点击事件（自动复制）
             document.getElementById('totpCode').addEventListener('click', copyToClipboard);
         };
     </script>
