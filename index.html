@@ -79,7 +79,7 @@
 <body>
     <h1>Discord专用2FA验证码生成器</h1>
     
-    <textarea class="secret-input" id="secretInput" placeholder="粘贴Discord的2FA密钥（二维码提取的secret）">FXVLGSEADALXX6BBY3NT3FUU2BUVV7QA</textarea>
+    <textarea class="secret-input" id="secretInput" placeholder="粘贴Discord的2FA密钥">XKAC5W20F4V6QDDDT17RECZWHKOKK7X2</textarea>
     
     <div class="btn-group">
         <button onclick="updateCode()">刷新验证码</button>
@@ -94,17 +94,13 @@
     <div class="tip">提示：Discord 2FA使用SHA256算法，此工具已适配</div>
 
     <script>
-        // Discord 2FA专用配置
         const INTERVAL = 30;
         let currentSecret = document.getElementById('secretInput').value.trim();
 
-        // Discord兼容的Base32解码（处理其特殊填充）
+        // Base32解码（适配Discord）
         function base32Decode(secret) {
             const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
             secret = secret.toUpperCase().replace(/[^A-Z2-7]/g, '');
-            if (secret.length === 0) return new Uint8Array(0);
-
-            // Discord密钥可能缺少填充符，补全到8的倍数
             while (secret.length % 8 !== 0) secret += '=';
 
             let bits = '';
@@ -123,32 +119,35 @@
             return new Uint8Array(bytes);
         }
 
-        // Discord 2FA专用：HMAC-SHA256（而非SHA1）
+        // 异步HMAC-SHA256计算
         async function hmacSHA256(keyBytes, dataBytes) {
-            const cryptoKey = await crypto.subtle.importKey(
-                'raw', keyBytes, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
-            );
-            const signature = await crypto.subtle.sign('HMAC', cryptoKey, dataBytes);
-            return new Uint8Array(signature);
+            try {
+                const cryptoKey = await crypto.subtle.importKey(
+                    'raw', keyBytes, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
+                );
+                const signature = await crypto.subtle.sign('HMAC', cryptoKey, dataBytes);
+                return new Uint8Array(signature);
+            } catch (e) {
+                console.error('HMAC计算失败:', e);
+                return new Uint8Array(0);
+            }
         }
 
-        // 生成Discord专用2FA验证码
+        // 生成Discord验证码（异步）
         async function generateDiscordCode() {
-            if (!currentSecret) return '无密钥';
+            if (!currentSecret) return '请输入密钥';
             const secretBytes = base32Decode(currentSecret);
-            if (secretBytes.length === 0) return '密钥错误';
+            if (secretBytes.length === 0) return '密钥无效';
 
-            // Discord使用标准30秒时间步长
             const time = Math.floor(Date.now() / 1000 / INTERVAL);
             const timeBuffer = new ArrayBuffer(8);
-            new DataView(timeBuffer).setBigInt64(0, BigInt(time), false); // 大端序
+            new DataView(timeBuffer).setBigInt64(0, BigInt(time), false);
             const timeBytes = new Uint8Array(timeBuffer);
 
-            // 核心差异：Discord用SHA256而非SHA1
             const hmac = await hmacSHA256(secretBytes, timeBytes);
+            if (hmac.length === 0) return '加密失败';
+
             const offset = hmac[hmac.length - 1] & 0x0F;
-            
-            // 截断计算（和标准TOTP一致，但基于SHA256结果）
             const code = (
                 ((hmac[offset] & 0x7F) << 24) |
                 ((hmac[offset + 1] & 0xFF) << 16) |
@@ -159,13 +158,12 @@
             return code.toString().padStart(6, '0');
         }
 
-        // 更新验证码和倒计时
+        // 更新验证码（处理异步）
         async function updateCode() {
             currentSecret = document.getElementById('secretInput').value.trim();
-            
             const code = await generateDiscordCode();
             document.getElementById('mainCode').textContent = code;
-            
+
             // 更新倒计时
             const remaining = INTERVAL - (Math.floor(Date.now() / 1000) % INTERVAL);
             document.getElementById('countdown').textContent = `剩余有效时间：${remaining}秒`;
@@ -194,11 +192,11 @@
             updateCode();
         }
 
-        // 初始化+自动刷新
-        window.onload = async () => {
+        // 初始化（立即执行异步函数）
+        (async () => {
             await updateCode();
             setInterval(updateCode, 1000);
-            
+
             // 回车刷新
             document.getElementById('secretInput').addEventListener('keypress', async (e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
@@ -206,7 +204,7 @@
                     await updateCode();
                 }
             });
-        };
+        })();
     </script>
 </body>
 </html>
