@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>Discord专用2FA验证码生成器</title>
+    <title>Discord 2FA验证码生成器（最终版）</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { 
@@ -77,9 +77,9 @@
     </style>
 </head>
 <body>
-    <h1>Discord专用2FA验证码生成器</h1>
+    <h1>Discord 2FA验证码生成器</h1>
     
-    <textarea class="secret-input" id="secretInput" placeholder="粘贴Discord的2FA密钥">XKAC5W20F4V6QDDDT17RECZWHKOKK7X2</textarea>
+    <textarea class="secret-input" id="secretInput" placeholder="粘贴Discord的2FA密钥（仅A-Z/2-7）">XKAC5W20F4V6QDDDT17RECZWHKOKK7X2</textarea>
     
     <div class="btn-group">
         <button onclick="updateCode()">刷新验证码</button>
@@ -87,17 +87,18 @@
     </div>
 
     <div class="code-container">
-        <div class="main-code" id="mainCode" onclick="copyCode()">点击复制验证码</div>
+        <div class="main-code" id="mainCode">点击刷新生成</div>
     </div>
 
     <div class="countdown" id="countdown">剩余有效时间：--秒</div>
-    <div class="tip">提示：Discord 2FA使用SHA256算法，此工具已适配</div>
+    <div class="tip">✅ 纯JS实现，无浏览器加密API限制</div>
 
     <script>
+        // 核心配置
         const INTERVAL = 30;
         let currentSecret = document.getElementById('secretInput').value.trim();
 
-        // Base32解码（适配Discord）
+        // 1. Base32解码（适配Discord）
         function base32Decode(secret) {
             const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
             secret = secret.toUpperCase().replace(/[^A-Z2-7]/g, '');
@@ -119,35 +120,115 @@
             return new Uint8Array(bytes);
         }
 
-        // 异步HMAC-SHA256计算
-        async function hmacSHA256(keyBytes, dataBytes) {
-            try {
-                const cryptoKey = await crypto.subtle.importKey(
-                    'raw', keyBytes, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
-                );
-                const signature = await crypto.subtle.sign('HMAC', cryptoKey, dataBytes);
-                return new Uint8Array(signature);
-            } catch (e) {
-                console.error('HMAC计算失败:', e);
-                return new Uint8Array(0);
+        // 2. 纯JS SHA256实现（无依赖）
+        function sha256(bytes) {
+            const K = [
+                0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+                0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+                0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+                0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+                0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+                0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+                0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+                0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
+            ];
+
+            let H = [
+                0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+                0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19
+            ];
+
+            bytes = new Uint8Array([...bytes]);
+            const len = bytes.length * 8;
+            bytes = [...bytes, 0x80];
+            while (bytes.length % 64 !== 56) bytes.push(0);
+            bytes = new Uint8Array([...bytes, ...new Uint8Array(8).map((_, i) => (len >>> (8 * (7 - i))) & 0xff)]);
+
+            for (let i = 0; i < bytes.length; i += 64) {
+                const block = bytes.slice(i, i + 64);
+                const w = new Array(64);
+                for (let j = 0; j < 16; j++) {
+                    w[j] = (block[j * 4] << 24) | (block[j * 4 + 1] << 16) | (block[j * 4 + 2] << 8) | block[j * 4 + 3];
+                }
+                for (let j = 16; j < 64; j++) {
+                    const s0 = (w[j - 15] >>> 7 | w[j - 15] << 25) ^ (w[j - 15] >>> 18 | w[j - 15] << 14) ^ (w[j - 15] >>> 3);
+                    const s1 = (w[j - 2] >>> 17 | w[j - 2] << 15) ^ (w[j - 2] >>> 19 | w[j - 2] << 13) ^ (w[j - 2] >>> 10);
+                    w[j] = (w[j - 16] + s0 + w[j - 7] + s1) >>> 0;
+                }
+
+                let [a, b, c, d, e, f, g, h] = H;
+                for (let j = 0; j < 64; j++) {
+                    const S1 = (e >>> 6 | e << 26) ^ (e >>> 11 | e << 21) ^ (e >>> 25 | e << 7);
+                    const ch = (e & f) ^ (~e & g);
+                    const temp1 = (h + S1 + ch + K[j] + w[j]) >>> 0;
+                    const S0 = (a >>> 2 | a << 30) ^ (a >>> 13 | a << 19) ^ (a >>> 22 | a << 10);
+                    const maj = (a & b) ^ (a & c) ^ (b & c);
+                    const temp2 = (S0 + maj) >>> 0;
+
+                    h = g;
+                    g = f;
+                    f = e;
+                    e = (d + temp1) >>> 0;
+                    d = c;
+                    c = b;
+                    b = a;
+                    a = (temp1 + temp2) >>> 0;
+                }
+
+                H[0] = (H[0] + a) >>> 0;
+                H[1] = (H[1] + b) >>> 0;
+                H[2] = (H[2] + c) >>> 0;
+                H[3] = (H[3] + d) >>> 0;
+                H[4] = (H[4] + e) >>> 0;
+                H[5] = (H[5] + f) >>> 0;
+                H[6] = (H[6] + g) >>> 0;
+                H[7] = (H[7] + h) >>> 0;
             }
+
+            const result = [];
+            for (let h of H) {
+                result.push(h >>> 24 & 0xff);
+                result.push(h >>> 16 & 0xff);
+                result.push(h >>> 8 & 0xff);
+                result.push(h & 0xff);
+            }
+            return new Uint8Array(result);
         }
 
-        // 生成Discord验证码（异步）
-        async function generateDiscordCode() {
+        // 3. 纯JS HMAC-SHA256实现
+        function hmacSHA256(key, data) {
+            key = new Uint8Array(key);
+            if (key.length > 64) key = sha256(key);
+            if (key.length < 64) key = new Uint8Array([...key, ...new Uint8Array(64 - key.length)]);
+
+            const ipad = new Uint8Array(64);
+            const opad = new Uint8Array(64);
+            for (let i = 0; i < 64; i++) {
+                ipad[i] = key[i] ^ 0x36;
+                opad[i] = key[i] ^ 0x5c;
+            }
+
+            const inner = sha256(new Uint8Array([...ipad, ...data]));
+            return sha256(new Uint8Array([...opad, ...inner]));
+        }
+
+        // 4. 生成Discord 2FA验证码
+        function generateDiscordCode() {
             if (!currentSecret) return '请输入密钥';
             const secretBytes = base32Decode(currentSecret);
             if (secretBytes.length === 0) return '密钥无效';
 
+            // 计算时间步长
             const time = Math.floor(Date.now() / 1000 / INTERVAL);
             const timeBuffer = new ArrayBuffer(8);
             new DataView(timeBuffer).setBigInt64(0, BigInt(time), false);
             const timeBytes = new Uint8Array(timeBuffer);
 
-            const hmac = await hmacSHA256(secretBytes, timeBytes);
-            if (hmac.length === 0) return '加密失败';
-
+            // HMAC-SHA256计算
+            const hmac = hmacSHA256(secretBytes, timeBytes);
             const offset = hmac[hmac.length - 1] & 0x0F;
+
+            // 生成6位验证码
             const code = (
                 ((hmac[offset] & 0x7F) << 24) |
                 ((hmac[offset + 1] & 0xFF) << 16) |
@@ -158,10 +239,10 @@
             return code.toString().padStart(6, '0');
         }
 
-        // 更新验证码（处理异步）
-        async function updateCode() {
+        // 5. 更新验证码和倒计时
+        function updateCode() {
             currentSecret = document.getElementById('secretInput').value.trim();
-            const code = await generateDiscordCode();
+            const code = generateDiscordCode();
             document.getElementById('mainCode').textContent = code;
 
             // 更新倒计时
@@ -169,42 +250,41 @@
             document.getElementById('countdown').textContent = `剩余有效时间：${remaining}秒`;
         }
 
-        // 复制验证码
-        function copyCode() {
-            const code = document.getElementById('mainCode').textContent;
-            if (code.length !== 6) return;
-            
-            navigator.clipboard.writeText(code).then(() => {
-                const el = document.getElementById('mainCode');
-                el.classList.add('copied');
-                el.textContent = '✅ ' + code;
-                setTimeout(() => {
-                    el.classList.remove('copied');
-                    el.textContent = code;
-                }, 1500);
-            });
-        }
-
-        // 重置密钥
+        // 6. 重置密钥
         function resetSecret() {
             currentSecret = document.getElementById('secretInput').placeholder;
             document.getElementById('secretInput').value = currentSecret;
             updateCode();
         }
 
-        // 初始化（立即执行异步函数）
-        (async () => {
-            await updateCode();
+        // 7. 复制验证码（点击验证码区域）
+        document.getElementById('mainCode').addEventListener('click', function() {
+            const code = this.textContent;
+            if (code.length !== 6 || code.includes('密钥')) return;
+            
+            navigator.clipboard.writeText(code).then(() => {
+                this.classList.add('copied');
+                this.textContent = '✅ ' + code;
+                setTimeout(() => {
+                    this.classList.remove('copied');
+                    this.textContent = code;
+                }, 1500);
+            });
+        });
+
+        // 初始化
+        window.onload = function() {
+            updateCode();
             setInterval(updateCode, 1000);
 
             // 回车刷新
-            document.getElementById('secretInput').addEventListener('keypress', async (e) => {
+            document.getElementById('secretInput').addEventListener('keypress', function(e) {
                 if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
-                    await updateCode();
+                    updateCode();
                 }
             });
-        })();
+        };
     </script>
 </body>
 </html>
